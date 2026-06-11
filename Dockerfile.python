@@ -1,0 +1,51 @@
+# ============================================
+# СТАДИЯ 1: СБОРКА (builder)
+# ============================================
+# 1. Слой, который редко меняется (ОС, системные пакеты)
+FROM python:3.12-slim AS builder
+
+# Устанавливаем компиляторы и заголовочные файлы для сборки MySQL-драйвера
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    default-libmysqlclient-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Создаём рабочую папку (слой не меняется)
+WORKDIR /app
+
+# 3. Файлы зависимостей меняются часто.
+COPY requirements.txt .
+
+# 4. Устанавливаем Python пакеты
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ============================================
+# СТАДИЯ 2: ФИНАЛЬНЫЙ ОБРАЗ
+# ============================================
+FROM python:3.12-slim
+
+# Устанавливаем curl для healthcheck и bash для удобства
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    mariadb-client-compat\
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Рабочая папка
+WORKDIR /app
+
+# 3. Копируем установленные пакеты Python из builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+
+# 4. Копируе код (меняется чаще всего)
+COPY . .
+
+# Healthcheck проверяет, что приложение отвечает на HTTP-запросы
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:5000 || exit 1
+
+# Запускаем приложение
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
+
