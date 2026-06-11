@@ -20,6 +20,10 @@ print_green "========================================="
 print_yellow "Шаг 1: Очистка старых контейнеров..."
 docker compose down -v 2>/dev/null || true
 
+# Шаг 1.2: (опционально) Полная очистка - раскомментировать если нужна
+# print_yellow "Шаг 1.2: Полная очистка (удаление образов и томов)..."
+# docker compose down -rmi all --volumes --remove-orphans 2>/dev/null || true 
+
 # Шаг 2: Проверка синтаксиса compose.yaml
 print_yellow "Шаг 2: Проверка синтаксиса compose.yaml..."
 docker compose config > /dev/null
