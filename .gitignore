@@ -1,0 +1,27 @@
+# Виртуальное окружение Python
+venv/
+env/
+ENV/
+.venv/
+
+# Файлы Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Файлы IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Файлы окружения
+.env.local
+
+# Логи
+*.log
+
+# Временные файлы
+*.tmp
+.DS_Store
