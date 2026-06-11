@@ -1,0 +1,111 @@
+version: '3.8'
+
+networks:
+  backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+services:
+  # ============================================
+  # MySQL база данных (172.20.0.10:3306)
+  # ============================================
+  db:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    networks:
+      backend:
+        ipv4_address: 172.20.0.10
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ============================================
+  # Python FastAPI приложение (172.20.0.5:5000)
+  # ============================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: shvirtd-example-python-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Переменные для подключения к БД (отличаются от значений по умолчанию в main.py)
+      DB_HOST: "172.20.0.10"
+      DB_USER: "app"
+      DB_PASSWORD: "QwErTy1234"
+      DB_NAME: "virtd"
+    # Порт 5000 НЕ публикуем на хост - клиент обязан идти через Nginx (порт 8090)
+    networks:
+      backend:
+        ipv4_address: 172.20.0.5
+    # Healthcheck встроен в Dockerfile.python
+
+  # ============================================
+  # HAProxy Reverse Proxy (внутренний, порт 8080)
+  # ============================================
+  reverse-proxy:
+    image: haproxy:2.4
+    container_name: haproxy
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      backend:
+        ipv4_address: 172.20.0.15
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./haproxy/reverse/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: ["CMD", "haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg", "-c"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # Nginx Ingress Proxy (внешний, порт 8090)
+  # ============================================
+  ingress-proxy:
+    image: nginx:latest
+    container_name: nginx
+    restart: unless-stopped
+    depends_on:
+      reverse-proxy:
+        condition: service_healthy
+    networks:
+      backend:
+        ipv4_address: 172.20.0.20
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./nginx/ingress/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ingress/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mysql_data:
